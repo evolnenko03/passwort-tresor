@@ -16,6 +16,8 @@
             <section
                 class="w-full max-w-lg rounded-2xl border border-slate-800/80 bg-slate-950/80 p-6 shadow-2xl shadow-black/60 backdrop-blur"
                 x-data="{
+                    storageKey: 'password-generator',
+                    storageTimeout: null,
                     symbolCharacters: '!@#$%^&*()-_=+[]{};:,.?/',
                     minLength: 8,
                     maxLength: 128,
@@ -23,15 +25,201 @@
                     includeLowercase: true,
                     includeUppercase: true,
                     includeDigits: true,
-                    includeSymbols: false,
-                    minLower: 0,
-                    minUpper: 0,
-                    minDigits: 0,
-                    minSymbols: 0,
+                    includeSymbols: true,
+                    minDigits: 1,
+                    minSymbols: 1,
                     password: '',
                     errorMessage: '',
                     copied: false,
                     copyTimeout: null,
+                    init() {
+                        const loaded = this.loadState();
+
+                        this.clampLen();
+                        this.enforceAtLeastOneType();
+                        this.autocorrectMins();
+
+                        if (!loaded || !this.password) {
+                            this.generate();
+                        } else {
+                            this.sanitizePassword();
+                        }
+
+                        this.$nextTick(() => {
+                            this.resizeTextarea();
+                        });
+
+                        this.$watch('length', () => this.queueSave());
+                        this.$watch('includeLowercase', () => this.queueSave());
+                        this.$watch('includeUppercase', () => this.queueSave());
+                        this.$watch('includeDigits', () => this.queueSave());
+                        this.$watch('includeSymbols', () => this.queueSave());
+                        this.$watch('minDigits', () => this.queueSave());
+                        this.$watch('minSymbols', () => this.queueSave());
+                        this.$watch('password', () => this.queueSave());
+                    },
+                    storageAvailable() {
+                        try {
+                            const testKey = `${this.storageKey}-test`;
+                            localStorage.setItem(testKey, '1');
+                            localStorage.removeItem(testKey);
+                            return true;
+                        } catch (error) {
+                            return false;
+                        }
+                    },
+                    loadState() {
+                        if (!this.storageAvailable()) {
+                            return false;
+                        }
+
+                        const raw = localStorage.getItem(this.storageKey);
+
+                        if (!raw) {
+                            return false;
+                        }
+
+                        try {
+                            const data = JSON.parse(raw);
+
+                            if (Number.isFinite(data.length)) {
+                                this.length = data.length;
+                            }
+
+                            if (typeof data.includeLowercase === 'boolean') {
+                                this.includeLowercase = data.includeLowercase;
+                            }
+
+                            if (typeof data.includeUppercase === 'boolean') {
+                                this.includeUppercase = data.includeUppercase;
+                            }
+
+                            if (typeof data.includeDigits === 'boolean') {
+                                this.includeDigits = data.includeDigits;
+                            }
+
+                            if (typeof data.includeSymbols === 'boolean') {
+                                this.includeSymbols = data.includeSymbols;
+                            }
+
+                            if (Number.isFinite(data.minDigits)) {
+                                this.minDigits = data.minDigits;
+                            }
+
+                            if (Number.isFinite(data.minSymbols)) {
+                                this.minSymbols = data.minSymbols;
+                            }
+
+                            if (typeof data.password === 'string') {
+                                this.password = data.password;
+                            }
+                        } catch (error) {
+                            return false;
+                        }
+
+                        return true;
+                    },
+                    saveState() {
+                        if (!this.storageAvailable()) {
+                            return;
+                        }
+
+                        const payload = {
+                            length: this.length,
+                            includeLowercase: this.includeLowercase,
+                            includeUppercase: this.includeUppercase,
+                            includeDigits: this.includeDigits,
+                            includeSymbols: this.includeSymbols,
+                            minDigits: this.minDigits,
+                            minSymbols: this.minSymbols,
+                            password: this.password
+                        };
+
+                        try {
+                            localStorage.setItem(this.storageKey, JSON.stringify(payload));
+                        } catch (error) {
+                            return;
+                        }
+                    },
+                    queueSave() {
+                        if (!this.storageAvailable()) {
+                            return;
+                        }
+
+                        if (this.storageTimeout) {
+                            clearTimeout(this.storageTimeout);
+                        }
+
+                        this.storageTimeout = setTimeout(() => {
+                            this.saveState();
+                        }, 200);
+                    },
+                    clampLen() {
+                        const numericValue = Number.parseInt(this.length, 10);
+
+                        if (!Number.isFinite(numericValue)) {
+                            this.length = this.minLength;
+                            return;
+                        }
+
+                        if (numericValue < this.minLength) {
+                            this.length = this.minLength;
+                            return;
+                        }
+
+                        if (numericValue > this.maxLength) {
+                            this.length = this.maxLength;
+                            return;
+                        }
+
+                        this.length = numericValue;
+                    },
+                    enforceAtLeastOneType(typeKey = null) {
+                        if (this.includeLowercase || this.includeUppercase || this.includeDigits || this.includeSymbols) {
+                            return true;
+                        }
+
+                        if (typeKey) {
+                            this[typeKey] = true;
+                        } else {
+                            this.includeLowercase = true;
+                        }
+
+                        this.errorMessage = 'Mindestens ein Zeichentyp muss aktiv sein.';
+                        return false;
+                    },
+                    autocorrectMins() {
+                        if (!this.includeDigits) {
+                            this.minDigits = 0;
+                        }
+
+                        if (!this.includeSymbols) {
+                            this.minSymbols = 0;
+                        }
+
+                        this.minDigits = this.clampNumber(this.minDigits, 0, this.maxLength);
+                        this.minSymbols = this.clampNumber(this.minSymbols, 0, this.maxLength);
+
+                        let total = this.minDigits + this.minSymbols;
+
+                        if (total <= this.length) {
+                            return;
+                        }
+
+                        this.errorMessage = 'Summe der Mindestwerte darf die Laenge nicht ueberschreiten.';
+                        let overflow = total - this.length;
+                        const order = ['minSymbols', 'minDigits'];
+
+                        order.forEach((key) => {
+                            if (overflow <= 0) {
+                                return;
+                            }
+
+                            const reduction = Math.min(this[key], overflow);
+                            this[key] -= reduction;
+                            overflow -= reduction;
+                        });
+                    },
                     clampNumber(value, min, max) {
                         const numericValue = Number.parseInt(value, 10);
 
@@ -49,38 +237,18 @@
 
                         return numericValue;
                     },
-                    clampLength() {
-                        this.length = this.clampNumber(this.length, this.minLength, this.maxLength);
-                    },
-                    normalizeMins() {
-                        this.minLower = this.includeLowercase ? this.clampNumber(this.minLower, 0, this.maxLength) : 0;
-                        this.minUpper = this.includeUppercase ? this.clampNumber(this.minUpper, 0, this.maxLength) : 0;
-                        this.minDigits = this.includeDigits ? this.clampNumber(this.minDigits, 0, this.maxLength) : 0;
-                        this.minSymbols = this.includeSymbols ? this.clampNumber(this.minSymbols, 0, this.maxLength) : 0;
+                    resizeTextarea() {
+                        const field = this.$refs.passwordField;
 
-                        let total = this.minLower + this.minUpper + this.minDigits + this.minSymbols;
-
-                        if (total <= this.length) {
+                        if (!field) {
                             return;
                         }
 
-                        this.errorMessage = 'Summe der Mindestwerte darf die Laenge nicht ueberschreiten.';
-                        let overflow = total - this.length;
-                        const order = ['minSymbols', 'minDigits', 'minUpper', 'minLower'];
-
-                        order.forEach((key) => {
-                            if (overflow <= 0) {
-                                return;
-                            }
-
-                            const reduction = Math.min(this[key], overflow);
-                            this[key] -= reduction;
-                            overflow -= reduction;
-                        });
+                        field.style.height = 'auto';
+                        field.style.height = `${field.scrollHeight}px`;
                     },
                     sanitizePassword() {
                         const current = this.password ?? '';
-                        const allowedSymbols = this.symbolCharacters;
                         let sanitized = '';
 
                         for (const character of current) {
@@ -99,7 +267,7 @@
                                 continue;
                             }
 
-                            if (this.includeSymbols && allowedSymbols.includes(character)) {
+                            if (this.includeSymbols && this.symbolCharacters.includes(character)) {
                                 sanitized += character;
                             }
                         }
@@ -112,38 +280,53 @@
                             this.password = sanitized;
                             this.copied = false;
                         }
+
+                        this.$nextTick(() => {
+                            this.resizeTextarea();
+                        });
                     },
                     handleLengthInput() {
                         this.errorMessage = '';
-                        this.clampLength();
-                        this.normalizeMins();
+                        this.clampLen();
+                        this.autocorrectMins();
                         this.sanitizePassword();
                     },
-                    handleMinInput(key) {
+                    handleMinDigitsInput() {
                         this.errorMessage = '';
-                        this[key] = this.clampNumber(this[key], 0, this.maxLength);
-                        this.normalizeMins();
+                        this.minDigits = this.clampNumber(this.minDigits, 0, this.maxLength);
+                        this.autocorrectMins();
                     },
-                    handleTypeToggle(typeKey, minKey) {
+                    handleMinSymbolsInput() {
+                        this.errorMessage = '';
+                        this.minSymbols = this.clampNumber(this.minSymbols, 0, this.maxLength);
+                        this.autocorrectMins();
+                    },
+                    handleTypeToggle(typeKey) {
                         this.errorMessage = '';
 
                         if (!this[typeKey]) {
-                            if (!this.includeLowercase && !this.includeUppercase && !this.includeDigits && !this.includeSymbols) {
-                                this[typeKey] = true;
-                                this.errorMessage = 'Mindestens ein Zeichentyp muss aktiv sein.';
+                            if (!this.enforceAtLeastOneType(typeKey)) {
                                 return;
                             }
 
-                            this[minKey] = 0;
-                        } else {
-                            this[minKey] = this.clampNumber(this[minKey], 0, this.maxLength);
+                            if (typeKey === 'includeDigits') {
+                                this.minDigits = 0;
+                            }
 
-                            if (this[minKey] < 1) {
-                                this[minKey] = 1;
+                            if (typeKey === 'includeSymbols') {
+                                this.minSymbols = 0;
+                            }
+                        } else {
+                            if (typeKey === 'includeDigits' && this.minDigits < 1) {
+                                this.minDigits = 1;
+                            }
+
+                            if (typeKey === 'includeSymbols' && this.minSymbols < 1) {
+                                this.minSymbols = 1;
                             }
                         }
 
-                        this.normalizeMins();
+                        this.autocorrectMins();
                         this.sanitizePassword();
                     },
                     handlePasswordInput() {
@@ -240,7 +423,7 @@
                     hasCrypto() {
                         return Boolean(window.crypto && window.crypto.getRandomValues);
                     },
-                    randomInt(max) {
+                    cryptoRandomIndex(max) {
                         if (!this.hasCrypto()) {
                             return 0;
                         }
@@ -262,11 +445,15 @@
                         return value % max;
                     },
                     randomChar(characters) {
-                        return characters.charAt(this.randomInt(characters.length));
+                        if (!characters.length) {
+                            return '';
+                        }
+
+                        return characters.charAt(this.cryptoRandomIndex(characters.length));
                     },
                     shuffle(characters) {
                         for (let i = characters.length - 1; i > 0; i -= 1) {
-                            const j = this.randomInt(i + 1);
+                            const j = this.cryptoRandomIndex(i + 1);
                             [characters[i], characters[j]] = [characters[j], characters[i]];
                         }
 
@@ -274,13 +461,13 @@
                     },
                     generate() {
                         this.errorMessage = '';
-                        this.clampLength();
-                        this.normalizeMins();
+                        this.clampLen();
 
-                        if (!this.includeLowercase && !this.includeUppercase && !this.includeDigits && !this.includeSymbols) {
-                            this.errorMessage = 'Mindestens ein Zeichentyp muss aktiv sein.';
+                        if (!this.enforceAtLeastOneType()) {
                             return;
                         }
+
+                        this.autocorrectMins();
 
                         if (!this.hasCrypto()) {
                             this.errorMessage = 'Sichere Zufallszahlen sind in diesem Browser nicht verfuegbar.';
@@ -288,37 +475,34 @@
                         }
 
                         const sets = this.getCharacterSets();
-                        const activeSets = [];
-                        const requiredSets = [];
+                        const lettersPool = [];
+                        const otherPool = [];
 
                         if (this.includeLowercase) {
-                            activeSets.push(sets.lowercase);
-                            requiredSets.push({ set: sets.lowercase, count: this.minLower });
+                            lettersPool.push(sets.lowercase);
                         }
 
                         if (this.includeUppercase) {
-                            activeSets.push(sets.uppercase);
-                            requiredSets.push({ set: sets.uppercase, count: this.minUpper });
+                            lettersPool.push(sets.uppercase);
                         }
 
                         if (this.includeDigits) {
-                            activeSets.push(sets.digits);
-                            requiredSets.push({ set: sets.digits, count: this.minDigits });
+                            otherPool.push(sets.digits);
                         }
 
                         if (this.includeSymbols) {
-                            activeSets.push(sets.symbols);
-                            requiredSets.push({ set: sets.symbols, count: this.minSymbols });
+                            otherPool.push(sets.symbols);
                         }
 
-                        const pool = activeSets.join('');
                         const result = [];
 
-                        requiredSets.forEach((item) => {
-                            for (let i = 0; i < item.count; i += 1) {
-                                result.push(this.randomChar(item.set));
-                            }
-                        });
+                        for (let i = 0; i < this.minDigits; i += 1) {
+                            result.push(this.randomChar(sets.digits));
+                        }
+
+                        for (let i = 0; i < this.minSymbols; i += 1) {
+                            result.push(this.randomChar(sets.symbols));
+                        }
 
                         const remaining = this.length - result.length;
 
@@ -327,12 +511,25 @@
                             return;
                         }
 
+                        const letterPoolValue = lettersPool.join('');
+                        const fallbackPoolValue = otherPool.join('');
+                        const fillPool = letterPoolValue.length ? letterPoolValue : fallbackPoolValue;
+
+                        if (!fillPool.length) {
+                            this.errorMessage = 'Mindestens ein Zeichentyp muss aktiv sein.';
+                            return;
+                        }
+
                         for (let i = 0; i < remaining; i += 1) {
-                            result.push(this.randomChar(pool));
+                            result.push(this.randomChar(fillPool));
                         }
 
                         this.password = this.shuffle(result).join('');
                         this.copied = false;
+
+                        this.$nextTick(() => {
+                            this.resizeTextarea();
+                        });
                     },
                     async copyPassword() {
                         this.errorMessage = '';
@@ -373,10 +570,7 @@
 
                 <div class="mt-6 flex flex-col gap-6">
                     <div class="flex flex-col gap-3">
-                        <div class="flex items-center justify-between">
-                            <label for="length" class="text-sm font-medium text-slate-200">Length</label>
-                            <span class="text-sm font-semibold text-white" x-text="length"></span>
-                        </div>
+                        <label for="length" class="text-sm font-medium text-slate-200">Length</label>
                         <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_5.5rem]">
                             <input
                                 id="length"
@@ -403,109 +597,79 @@
 
                     <fieldset class="flex flex-col gap-3">
                         <legend class="text-sm font-medium text-slate-200">Include characters</legend>
-                        <div class="flex flex-col gap-3">
-                            <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
-                                <label class="flex items-center gap-2 text-sm text-slate-200">
-                                    <input
-                                        type="checkbox"
-                                        class="h-4 w-4 accent-red-500"
-                                        x-model="includeLowercase"
-                                        @change="handleTypeToggle('includeLowercase', 'minLower')"
-                                    />
-                                    Lowercase (a-z)
-                                </label>
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xs font-semibold uppercase text-slate-400">Min</span>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        max="128"
-                                        step="1"
-                                        class="w-20 rounded-lg border border-slate-800 bg-slate-900 px-2 py-1 text-sm font-semibold text-white focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
-                                        x-model.number="minLower"
-                                        :disabled="!includeLowercase"
-                                        @input="handleMinInput('minLower')"
-                                        @blur="handleMinInput('minLower')"
-                                    />
-                                </div>
-                            </div>
-                            <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
-                                <label class="flex items-center gap-2 text-sm text-slate-200">
-                                    <input
-                                        type="checkbox"
-                                        class="h-4 w-4 accent-red-500"
-                                        x-model="includeUppercase"
-                                        @change="handleTypeToggle('includeUppercase', 'minUpper')"
-                                    />
-                                    Uppercase (A-Z)
-                                </label>
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xs font-semibold uppercase text-slate-400">Min</span>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        max="128"
-                                        step="1"
-                                        class="w-20 rounded-lg border border-slate-800 bg-slate-900 px-2 py-1 text-sm font-semibold text-white focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
-                                        x-model.number="minUpper"
-                                        :disabled="!includeUppercase"
-                                        @input="handleMinInput('minUpper')"
-                                        @blur="handleMinInput('minUpper')"
-                                    />
-                                </div>
-                            </div>
-                            <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
-                                <label class="flex items-center gap-2 text-sm text-slate-200">
-                                    <input
-                                        type="checkbox"
-                                        class="h-4 w-4 accent-red-500"
-                                        x-model="includeDigits"
-                                        @change="handleTypeToggle('includeDigits', 'minDigits')"
-                                    />
-                                    Digits (0-9)
-                                </label>
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xs font-semibold uppercase text-slate-400">Min</span>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        max="128"
-                                        step="1"
-                                        class="w-20 rounded-lg border border-slate-800 bg-slate-900 px-2 py-1 text-sm font-semibold text-white focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
-                                        x-model.number="minDigits"
-                                        :disabled="!includeDigits"
-                                        @input="handleMinInput('minDigits')"
-                                        @blur="handleMinInput('minDigits')"
-                                    />
-                                </div>
-                            </div>
-                            <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
-                                <label class="flex items-center gap-2 text-sm text-slate-200">
-                                    <input
-                                        type="checkbox"
-                                        class="h-4 w-4 accent-red-500"
-                                        x-model="includeSymbols"
-                                        @change="handleTypeToggle('includeSymbols', 'minSymbols')"
-                                    />
-                                    Symbols (!@#)
-                                </label>
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xs font-semibold uppercase text-slate-400">Min</span>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        max="128"
-                                        step="1"
-                                        class="w-20 rounded-lg border border-slate-800 bg-slate-900 px-2 py-1 text-sm font-semibold text-white focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
-                                        x-model.number="minSymbols"
-                                        :disabled="!includeSymbols"
-                                        @input="handleMinInput('minSymbols')"
-                                        @blur="handleMinInput('minSymbols')"
-                                    />
-                                </div>
-                            </div>
+                        <div class="grid gap-3 sm:grid-cols-2">
+                            <label class="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-200">
+                                <input
+                                    type="checkbox"
+                                    class="h-4 w-4 accent-red-500"
+                                    x-model="includeLowercase"
+                                    @change="handleTypeToggle('includeLowercase')"
+                                />
+                                Lowercase (a-z)
+                            </label>
+                            <label class="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-200">
+                                <input
+                                    type="checkbox"
+                                    class="h-4 w-4 accent-red-500"
+                                    x-model="includeUppercase"
+                                    @change="handleTypeToggle('includeUppercase')"
+                                />
+                                Uppercase (A-Z)
+                            </label>
+                            <label class="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-200">
+                                <input
+                                    type="checkbox"
+                                    class="h-4 w-4 accent-red-500"
+                                    x-model="includeDigits"
+                                    @change="handleTypeToggle('includeDigits')"
+                                />
+                                Digits (0-9)
+                            </label>
+                            <label class="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-200">
+                                <input
+                                    type="checkbox"
+                                    class="h-4 w-4 accent-red-500"
+                                    x-model="includeSymbols"
+                                    @change="handleTypeToggle('includeSymbols')"
+                                />
+                                Symbols (!@#)
+                            </label>
                         </div>
                     </fieldset>
+
+                    <div class="flex flex-col gap-3">
+                        <p class="text-sm font-medium text-slate-200">Minimum counts</p>
+                        <div class="grid gap-3 sm:grid-cols-2">
+                            <label class="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-200">
+                                Min digits
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="128"
+                                    step="1"
+                                    class="w-20 rounded-lg border border-slate-800 bg-slate-900 px-2 py-1 text-sm font-semibold text-white focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+                                    x-model.number="minDigits"
+                                    :disabled="!includeDigits"
+                                    @input="handleMinDigitsInput()"
+                                    @blur="handleMinDigitsInput()"
+                                />
+                            </label>
+                            <label class="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-200">
+                                Min symbols
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="128"
+                                    step="1"
+                                    class="w-20 rounded-lg border border-slate-800 bg-slate-900 px-2 py-1 text-sm font-semibold text-white focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+                                    x-model.number="minSymbols"
+                                    :disabled="!includeSymbols"
+                                    @input="handleMinSymbolsInput()"
+                                    @blur="handleMinSymbolsInput()"
+                                />
+                            </label>
+                        </div>
+                    </div>
 
                     <div class="flex flex-col gap-3">
                         <button
@@ -526,16 +690,17 @@
 
                     <div class="flex flex-col gap-3">
                         <label for="password" class="text-sm font-medium text-slate-200">Generated password</label>
-                        <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-                            <input
+                        <div class="flex flex-col gap-3 sm:flex-row sm:items-start">
+                            <textarea
                                 id="password"
-                                type="text"
-                                class="w-full flex-1 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm font-medium text-white placeholder:text-slate-500 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30"
+                                rows="1"
+                                class="min-h-[2.75rem] w-full flex-1 resize-none overflow-hidden rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm font-medium text-white placeholder:text-slate-500 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30"
                                 placeholder="Your password will appear here"
                                 x-model="password"
+                                x-ref="passwordField"
                                 :maxlength="length"
                                 @input="handlePasswordInput()"
-                            />
+                            ></textarea>
                             <button
                                 type="button"
                                 class="inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-red-500/30 disabled:cursor-not-allowed disabled:opacity-50"
