@@ -11,11 +11,12 @@
 
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
-    <body class="min-h-screen bg-gradient-to-br from-slate-50 via-white to-amber-50 text-slate-900">
+    <body class="min-h-screen bg-gradient-to-br from-black via-slate-950 to-slate-900 text-slate-100">
         <main class="mx-auto flex min-h-screen w-full max-w-5xl items-center justify-center px-6 py-12">
             <section
-                class="w-full max-w-lg rounded-2xl border border-slate-200/70 bg-white/90 p-6 shadow-xl backdrop-blur"
+                class="w-full max-w-lg rounded-2xl border border-slate-800/80 bg-slate-950/80 p-6 shadow-2xl shadow-black/60 backdrop-blur"
                 x-data="{
+                    symbolCharacters: '!@#$%^&*()-_=+[]{};:,.?/',
                     minLength: 8,
                     maxLength: 128,
                     length: 16,
@@ -63,9 +64,9 @@
                             return;
                         }
 
-                        this.errorMessage = 'Sum of minimum values cannot exceed the length.';
+                        this.errorMessage = 'Summe der Mindestwerte darf die Laenge nicht ueberschreiten.';
                         let overflow = total - this.length;
-                        const order = ['minLower', 'minUpper', 'minDigits', 'minSymbols'];
+                        const order = ['minSymbols', 'minDigits', 'minUpper', 'minLower'];
 
                         order.forEach((key) => {
                             if (overflow <= 0) {
@@ -77,10 +78,46 @@
                             overflow -= reduction;
                         });
                     },
+                    sanitizePassword() {
+                        const current = this.password ?? '';
+                        const allowedSymbols = this.symbolCharacters;
+                        let sanitized = '';
+
+                        for (const character of current) {
+                            if (this.includeLowercase && /[a-z]/.test(character)) {
+                                sanitized += character;
+                                continue;
+                            }
+
+                            if (this.includeUppercase && /[A-Z]/.test(character)) {
+                                sanitized += character;
+                                continue;
+                            }
+
+                            if (this.includeDigits && /[0-9]/.test(character)) {
+                                sanitized += character;
+                                continue;
+                            }
+
+                            if (this.includeSymbols && allowedSymbols.includes(character)) {
+                                sanitized += character;
+                            }
+                        }
+
+                        if (sanitized.length > this.length) {
+                            sanitized = sanitized.slice(0, this.length);
+                        }
+
+                        if (sanitized !== current) {
+                            this.password = sanitized;
+                            this.copied = false;
+                        }
+                    },
                     handleLengthInput() {
                         this.errorMessage = '';
                         this.clampLength();
                         this.normalizeMins();
+                        this.sanitizePassword();
                     },
                     handleMinInput(key) {
                         this.errorMessage = '';
@@ -93,17 +130,25 @@
                         if (!this[typeKey]) {
                             if (!this.includeLowercase && !this.includeUppercase && !this.includeDigits && !this.includeSymbols) {
                                 this[typeKey] = true;
-                                this.errorMessage = 'At least one character type must remain enabled.';
+                                this.errorMessage = 'Mindestens ein Zeichentyp muss aktiv sein.';
                                 return;
                             }
 
                             this[minKey] = 0;
+                        } else {
+                            this[minKey] = this.clampNumber(this[minKey], 0, this.maxLength);
+
+                            if (this[minKey] < 1) {
+                                this[minKey] = 1;
+                            }
                         }
 
                         this.normalizeMins();
+                        this.sanitizePassword();
                     },
                     handlePasswordInput() {
                         this.copied = false;
+                        this.sanitizePassword();
                     },
                     get score() {
                         return this.calculateScore();
@@ -121,25 +166,25 @@
                     },
                     get strengthBarClass() {
                         if (this.score >= 70) {
-                            return 'bg-emerald-500';
+                            return 'bg-red-500';
                         }
 
                         if (this.score >= 35) {
-                            return 'bg-amber-500';
+                            return 'bg-red-400';
                         }
 
-                        return 'bg-rose-500';
+                        return 'bg-red-300';
                     },
                     get strengthTextClass() {
                         if (this.score >= 70) {
-                            return 'text-emerald-600';
+                            return 'text-red-300';
                         }
 
                         if (this.score >= 35) {
-                            return 'text-amber-600';
+                            return 'text-red-400';
                         }
 
-                        return 'text-rose-600';
+                        return 'text-red-500';
                     },
                     calculateScore() {
                         const passwordValue = this.password ?? '';
@@ -189,7 +234,7 @@
                             lowercase: 'abcdefghijklmnopqrstuvwxyz',
                             uppercase: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
                             digits: '0123456789',
-                            symbols: '!@#$%^&*()-_=+[]{}<>?.,;:|~'
+                            symbols: this.symbolCharacters
                         };
                     },
                     hasCrypto() {
@@ -233,12 +278,12 @@
                         this.normalizeMins();
 
                         if (!this.includeLowercase && !this.includeUppercase && !this.includeDigits && !this.includeSymbols) {
-                            this.errorMessage = 'At least one character type must remain enabled.';
+                            this.errorMessage = 'Mindestens ein Zeichentyp muss aktiv sein.';
                             return;
                         }
 
                         if (!this.hasCrypto()) {
-                            this.errorMessage = 'Secure randomness is not available in this browser.';
+                            this.errorMessage = 'Sichere Zufallszahlen sind in diesem Browser nicht verfuegbar.';
                             return;
                         }
 
@@ -278,7 +323,7 @@
                         const remaining = this.length - result.length;
 
                         if (remaining < 0) {
-                            this.errorMessage = 'Sum of minimum values cannot exceed the length.';
+                            this.errorMessage = 'Summe der Mindestwerte darf die Laenge nicht ueberschreiten.';
                             return;
                         }
 
@@ -297,7 +342,7 @@
                         }
 
                         if (!navigator.clipboard || !navigator.clipboard.writeText) {
-                            this.errorMessage = 'Clipboard access is not available.';
+                            this.errorMessage = 'Zugriff auf die Zwischenablage ist nicht verfuegbar.';
                             return;
                         }
 
@@ -313,15 +358,15 @@
                                 this.copied = false;
                             }, 2000);
                         } catch (error) {
-                            this.errorMessage = 'Copy failed. Please copy manually.';
+                            this.errorMessage = 'Kopieren fehlgeschlagen. Bitte manuell kopieren.';
                         }
                     }
                 }"
             >
                 <header class="flex flex-col gap-2">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-amber-600">Secure Passwords</p>
-                    <h1 class="text-2xl font-semibold text-slate-900">Password Generator</h1>
-                    <p class="text-sm text-slate-600">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-red-400">Secure Passwords</p>
+                    <h1 class="text-2xl font-semibold text-white">Password Generator</h1>
+                    <p class="text-sm text-slate-300">
                         Create strong, custom passwords locally in your browser.
                     </p>
                 </header>
@@ -329,8 +374,8 @@
                 <div class="mt-6 flex flex-col gap-6">
                     <div class="flex flex-col gap-3">
                         <div class="flex items-center justify-between">
-                            <label for="length" class="text-sm font-medium text-slate-700">Length</label>
-                            <span class="text-sm font-semibold text-slate-900" x-text="length"></span>
+                            <label for="length" class="text-sm font-medium text-slate-200">Length</label>
+                            <span class="text-sm font-semibold text-white" x-text="length"></span>
                         </div>
                         <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_5.5rem]">
                             <input
@@ -339,7 +384,7 @@
                                 min="8"
                                 max="128"
                                 step="1"
-                                class="w-full accent-slate-900"
+                                class="w-full accent-red-500"
                                 x-model.number="length"
                                 @input="handleLengthInput()"
                             />
@@ -348,7 +393,7 @@
                                 min="8"
                                 max="128"
                                 step="1"
-                                class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                                class="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm font-semibold text-white focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30"
                                 x-model.number="length"
                                 @input="handleLengthInput()"
                                 @blur="handleLengthInput()"
@@ -357,26 +402,26 @@
                     </div>
 
                     <fieldset class="flex flex-col gap-3">
-                        <legend class="text-sm font-medium text-slate-700">Include characters</legend>
+                        <legend class="text-sm font-medium text-slate-200">Include characters</legend>
                         <div class="flex flex-col gap-3">
-                            <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
-                                <label class="flex items-center gap-2 text-sm text-slate-700">
+                            <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                                <label class="flex items-center gap-2 text-sm text-slate-200">
                                     <input
                                         type="checkbox"
-                                        class="h-4 w-4 accent-slate-900"
+                                        class="h-4 w-4 accent-red-500"
                                         x-model="includeLowercase"
                                         @change="handleTypeToggle('includeLowercase', 'minLower')"
                                     />
                                     Lowercase (a-z)
                                 </label>
                                 <div class="flex items-center gap-2">
-                                    <span class="text-xs font-semibold uppercase text-slate-500">Min</span>
+                                    <span class="text-xs font-semibold uppercase text-slate-400">Min</span>
                                     <input
                                         type="number"
                                         min="0"
                                         max="128"
                                         step="1"
-                                        class="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm font-semibold text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
+                                        class="w-20 rounded-lg border border-slate-800 bg-slate-900 px-2 py-1 text-sm font-semibold text-white focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
                                         x-model.number="minLower"
                                         :disabled="!includeLowercase"
                                         @input="handleMinInput('minLower')"
@@ -384,24 +429,24 @@
                                     />
                                 </div>
                             </div>
-                            <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
-                                <label class="flex items-center gap-2 text-sm text-slate-700">
+                            <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                                <label class="flex items-center gap-2 text-sm text-slate-200">
                                     <input
                                         type="checkbox"
-                                        class="h-4 w-4 accent-slate-900"
+                                        class="h-4 w-4 accent-red-500"
                                         x-model="includeUppercase"
                                         @change="handleTypeToggle('includeUppercase', 'minUpper')"
                                     />
                                     Uppercase (A-Z)
                                 </label>
                                 <div class="flex items-center gap-2">
-                                    <span class="text-xs font-semibold uppercase text-slate-500">Min</span>
+                                    <span class="text-xs font-semibold uppercase text-slate-400">Min</span>
                                     <input
                                         type="number"
                                         min="0"
                                         max="128"
                                         step="1"
-                                        class="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm font-semibold text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
+                                        class="w-20 rounded-lg border border-slate-800 bg-slate-900 px-2 py-1 text-sm font-semibold text-white focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
                                         x-model.number="minUpper"
                                         :disabled="!includeUppercase"
                                         @input="handleMinInput('minUpper')"
@@ -409,24 +454,24 @@
                                     />
                                 </div>
                             </div>
-                            <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
-                                <label class="flex items-center gap-2 text-sm text-slate-700">
+                            <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                                <label class="flex items-center gap-2 text-sm text-slate-200">
                                     <input
                                         type="checkbox"
-                                        class="h-4 w-4 accent-slate-900"
+                                        class="h-4 w-4 accent-red-500"
                                         x-model="includeDigits"
                                         @change="handleTypeToggle('includeDigits', 'minDigits')"
                                     />
                                     Digits (0-9)
                                 </label>
                                 <div class="flex items-center gap-2">
-                                    <span class="text-xs font-semibold uppercase text-slate-500">Min</span>
+                                    <span class="text-xs font-semibold uppercase text-slate-400">Min</span>
                                     <input
                                         type="number"
                                         min="0"
                                         max="128"
                                         step="1"
-                                        class="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm font-semibold text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
+                                        class="w-20 rounded-lg border border-slate-800 bg-slate-900 px-2 py-1 text-sm font-semibold text-white focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
                                         x-model.number="minDigits"
                                         :disabled="!includeDigits"
                                         @input="handleMinInput('minDigits')"
@@ -434,24 +479,24 @@
                                     />
                                 </div>
                             </div>
-                            <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
-                                <label class="flex items-center gap-2 text-sm text-slate-700">
+                            <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                                <label class="flex items-center gap-2 text-sm text-slate-200">
                                     <input
                                         type="checkbox"
-                                        class="h-4 w-4 accent-slate-900"
+                                        class="h-4 w-4 accent-red-500"
                                         x-model="includeSymbols"
                                         @change="handleTypeToggle('includeSymbols', 'minSymbols')"
                                     />
                                     Symbols (!@#)
                                 </label>
                                 <div class="flex items-center gap-2">
-                                    <span class="text-xs font-semibold uppercase text-slate-500">Min</span>
+                                    <span class="text-xs font-semibold uppercase text-slate-400">Min</span>
                                     <input
                                         type="number"
                                         min="0"
                                         max="128"
                                         step="1"
-                                        class="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm font-semibold text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
+                                        class="w-20 rounded-lg border border-slate-800 bg-slate-900 px-2 py-1 text-sm font-semibold text-white focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
                                         x-model.number="minSymbols"
                                         :disabled="!includeSymbols"
                                         @input="handleMinInput('minSymbols')"
@@ -465,13 +510,13 @@
                     <div class="flex flex-col gap-3">
                         <button
                             type="button"
-                            class="inline-flex w-full items-center justify-center rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-slate-200/70 transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300 focus:ring-offset-2"
+                            class="inline-flex w-full items-center justify-center rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-red-900/40 transition hover:bg-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/40 focus:ring-offset-2 focus:ring-offset-slate-950"
                             @click="generate()"
                         >
                             Generate
                         </button>
                         <p
-                            class="text-sm text-rose-600"
+                            class="text-sm text-red-400"
                             role="alert"
                             aria-live="polite"
                             x-show="errorMessage"
@@ -480,36 +525,37 @@
                     </div>
 
                     <div class="flex flex-col gap-3">
-                        <label for="password" class="text-sm font-medium text-slate-700">Generated password</label>
+                        <label for="password" class="text-sm font-medium text-slate-200">Generated password</label>
                         <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
                             <input
                                 id="password"
                                 type="text"
-                                class="w-full flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                                class="w-full flex-1 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm font-medium text-white placeholder:text-slate-500 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30"
                                 placeholder="Your password will appear here"
                                 x-model="password"
+                                :maxlength="length"
                                 @input="handlePasswordInput()"
                             />
                             <button
                                 type="button"
-                                class="inline-flex items-center justify-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+                                class="inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-red-500/30 disabled:cursor-not-allowed disabled:opacity-50"
                                 :disabled="password.length === 0"
                                 @click="copyPassword()"
                             >
                                 Copy
                             </button>
                         </div>
-                        <p class="text-xs font-semibold text-emerald-600" x-show="copied" x-transition>
+                        <p class="text-xs font-semibold text-red-300" x-show="copied" x-transition>
                             Copied!
                         </p>
                     </div>
 
                     <div class="flex flex-col gap-3">
                         <div class="flex items-center justify-between">
-                            <span class="text-sm font-medium text-slate-700">Strength</span>
+                            <span class="text-sm font-medium text-slate-200">Strength</span>
                             <span class="text-sm font-semibold" :class="strengthTextClass" x-text="`${strengthLabel} (${score})`"></span>
                         </div>
-                        <div class="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                        <div class="h-2 w-full overflow-hidden rounded-full bg-slate-800">
                             <div
                                 class="h-full transition-all duration-300"
                                 :class="strengthBarClass"
