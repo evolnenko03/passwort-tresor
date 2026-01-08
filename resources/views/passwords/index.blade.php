@@ -4,7 +4,7 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
 
-        <title>{{ config('app.name', 'Laravel') }} | Password Generator</title>
+        <title>{{ config('app.name', 'Laravel') }} | Passwortgenerator</title>
 
         <link rel="preconnect" href="https://fonts.bunny.net">
         <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600,700" rel="stylesheet" />
@@ -19,6 +19,13 @@
                     storageKey: 'password-generator',
                     storageTimeout: null,
                     symbolCharacters: '!@#$%^&*()-_=+[]{};:,.?/',
+                    messages: {
+                        minTypesRequired: 'Mindestens ein Zeichentyp muss aktiviert sein.',
+                        minValuesTooLarge: 'Die Summe der Mindestwerte darf die Passwortlänge nicht überschreiten.',
+                        cryptoUnavailable: 'Sichere Zufallszahlen sind in diesem Browser nicht verfügbar.',
+                        clipboardUnavailable: 'Zugriff auf die Zwischenablage ist nicht verfügbar.',
+                        clipboardFailed: 'Kopieren fehlgeschlagen. Bitte manuell kopieren.'
+                    },
                     minLength: 8,
                     maxLength: 128,
                     length: 16,
@@ -33,32 +40,38 @@
                     copied: false,
                     copyTimeout: null,
                     init() {
-                        const loaded = this.loadState();
+                        const loaded = this.loadStoredState();
 
-                        this.clampLen();
-                        this.enforceAtLeastOneType();
-                        this.autocorrectMins();
+                        this.clampLength();
+                        this.ensureTypeSelection();
+                        this.normalizeMinimums();
 
                         if (!loaded || !this.password) {
-                            this.generate();
+                            this.generatePassword();
                         } else {
-                            this.sanitizePassword();
+                            this.sanitizePasswordInput();
                         }
 
                         this.$nextTick(() => {
-                            this.resizeTextarea();
+                            this.resizePasswordField();
                         });
 
-                        this.$watch('length', () => this.queueSave());
-                        this.$watch('includeLowercase', () => this.queueSave());
-                        this.$watch('includeUppercase', () => this.queueSave());
-                        this.$watch('includeDigits', () => this.queueSave());
-                        this.$watch('includeSymbols', () => this.queueSave());
-                        this.$watch('minDigits', () => this.queueSave());
-                        this.$watch('minSymbols', () => this.queueSave());
-                        this.$watch('password', () => this.queueSave());
+                        const watchedKeys = [
+                            'length',
+                            'includeLowercase',
+                            'includeUppercase',
+                            'includeDigits',
+                            'includeSymbols',
+                            'minDigits',
+                            'minSymbols',
+                            'password'
+                        ];
+
+                        watchedKeys.forEach((key) => {
+                            this.$watch(key, () => this.scheduleStateSave());
+                        });
                     },
-                    storageAvailable() {
+                    isStorageAvailable() {
                         try {
                             const testKey = `${this.storageKey}-test`;
                             localStorage.setItem(testKey, '1');
@@ -68,8 +81,8 @@
                             return false;
                         }
                     },
-                    loadState() {
-                        if (!this.storageAvailable()) {
+                    loadStoredState() {
+                        if (!this.isStorageAvailable()) {
                             return false;
                         }
 
@@ -119,8 +132,8 @@
 
                         return true;
                     },
-                    saveState() {
-                        if (!this.storageAvailable()) {
+                    saveStoredState() {
+                        if (!this.isStorageAvailable()) {
                             return;
                         }
 
@@ -141,8 +154,8 @@
                             return;
                         }
                     },
-                    queueSave() {
-                        if (!this.storageAvailable()) {
+                    scheduleStateSave() {
+                        if (!this.isStorageAvailable()) {
                             return;
                         }
 
@@ -151,10 +164,10 @@
                         }
 
                         this.storageTimeout = setTimeout(() => {
-                            this.saveState();
+                            this.saveStoredState();
                         }, 200);
                     },
-                    clampLen() {
+                    clampLength() {
                         const numericValue = Number.parseInt(this.length, 10);
 
                         if (!Number.isFinite(numericValue)) {
@@ -174,52 +187,6 @@
 
                         this.length = numericValue;
                     },
-                    enforceAtLeastOneType(typeKey = null) {
-                        if (this.includeLowercase || this.includeUppercase || this.includeDigits || this.includeSymbols) {
-                            return true;
-                        }
-
-                        if (typeKey) {
-                            this[typeKey] = true;
-                        } else {
-                            this.includeLowercase = true;
-                        }
-
-                        this.errorMessage = 'Mindestens ein Zeichentyp muss aktiv sein.';
-                        return false;
-                    },
-                    autocorrectMins() {
-                        if (!this.includeDigits) {
-                            this.minDigits = 0;
-                        }
-
-                        if (!this.includeSymbols) {
-                            this.minSymbols = 0;
-                        }
-
-                        this.minDigits = this.clampNumber(this.minDigits, 0, this.maxLength);
-                        this.minSymbols = this.clampNumber(this.minSymbols, 0, this.maxLength);
-
-                        let total = this.minDigits + this.minSymbols;
-
-                        if (total <= this.length) {
-                            return;
-                        }
-
-                        this.errorMessage = 'Summe der Mindestwerte darf die Laenge nicht ueberschreiten.';
-                        let overflow = total - this.length;
-                        const order = ['minSymbols', 'minDigits'];
-
-                        order.forEach((key) => {
-                            if (overflow <= 0) {
-                                return;
-                            }
-
-                            const reduction = Math.min(this[key], overflow);
-                            this[key] -= reduction;
-                            overflow -= reduction;
-                        });
-                    },
                     clampNumber(value, min, max) {
                         const numericValue = Number.parseInt(value, 10);
 
@@ -237,7 +204,53 @@
 
                         return numericValue;
                     },
-                    resizeTextarea() {
+                    ensureTypeSelection(typeKey = null) {
+                        if (this.includeLowercase || this.includeUppercase || this.includeDigits || this.includeSymbols) {
+                            return true;
+                        }
+
+                        if (typeKey) {
+                            this[typeKey] = true;
+                        } else {
+                            this.includeLowercase = true;
+                        }
+
+                        this.errorMessage = this.messages.minTypesRequired;
+                        return false;
+                    },
+                    normalizeMinimums() {
+                        if (!this.includeDigits) {
+                            this.minDigits = 0;
+                        }
+
+                        if (!this.includeSymbols) {
+                            this.minSymbols = 0;
+                        }
+
+                        this.minDigits = this.clampNumber(this.minDigits, 0, this.maxLength);
+                        this.minSymbols = this.clampNumber(this.minSymbols, 0, this.maxLength);
+
+                        let total = this.minDigits + this.minSymbols;
+
+                        if (total <= this.length) {
+                            return;
+                        }
+
+                        this.errorMessage = this.messages.minValuesTooLarge;
+                        let overflow = total - this.length;
+                        const order = ['minSymbols', 'minDigits'];
+
+                        order.forEach((key) => {
+                            if (overflow <= 0) {
+                                return;
+                            }
+
+                            const reduction = Math.min(this[key], overflow);
+                            this[key] -= reduction;
+                            overflow -= reduction;
+                        });
+                    },
+                    resizePasswordField() {
                         const field = this.$refs.passwordField;
 
                         if (!field) {
@@ -247,7 +260,7 @@
                         field.style.height = 'auto';
                         field.style.height = `${field.scrollHeight}px`;
                     },
-                    sanitizePassword() {
+                    sanitizePasswordInput() {
                         const current = this.password ?? '';
                         let sanitized = '';
 
@@ -282,30 +295,33 @@
                         }
 
                         this.$nextTick(() => {
-                            this.resizeTextarea();
+                            this.resizePasswordField();
                         });
                     },
-                    handleLengthInput() {
+                    resetError() {
                         this.errorMessage = '';
-                        this.clampLen();
-                        this.autocorrectMins();
-                        this.sanitizePassword();
                     },
-                    handleMinDigitsInput() {
-                        this.errorMessage = '';
+                    handleLengthChange() {
+                        this.resetError();
+                        this.clampLength();
+                        this.normalizeMinimums();
+                        this.sanitizePasswordInput();
+                    },
+                    handleMinDigitsChange() {
+                        this.resetError();
                         this.minDigits = this.clampNumber(this.minDigits, 0, this.maxLength);
-                        this.autocorrectMins();
+                        this.normalizeMinimums();
                     },
-                    handleMinSymbolsInput() {
-                        this.errorMessage = '';
+                    handleMinSymbolsChange() {
+                        this.resetError();
                         this.minSymbols = this.clampNumber(this.minSymbols, 0, this.maxLength);
-                        this.autocorrectMins();
+                        this.normalizeMinimums();
                     },
-                    handleTypeToggle(typeKey) {
-                        this.errorMessage = '';
+                    handleTypeChange(typeKey) {
+                        this.resetError();
 
                         if (!this[typeKey]) {
-                            if (!this.enforceAtLeastOneType(typeKey)) {
+                            if (!this.ensureTypeSelection(typeKey)) {
                                 return;
                             }
 
@@ -326,26 +342,26 @@
                             }
                         }
 
-                        this.autocorrectMins();
-                        this.sanitizePassword();
+                        this.normalizeMinimums();
+                        this.sanitizePasswordInput();
                     },
-                    handlePasswordInput() {
+                    handlePasswordChange() {
                         this.copied = false;
-                        this.sanitizePassword();
+                        this.sanitizePasswordInput();
                     },
                     get score() {
                         return this.calculateScore();
                     },
                     get strengthLabel() {
                         if (this.score >= 70) {
-                            return 'Strong';
+                            return 'Stark';
                         }
 
                         if (this.score >= 35) {
-                            return 'Medium';
+                            return 'Mittel';
                         }
 
-                        return 'Weak';
+                        return 'Schwach';
                     },
                     get strengthBarClass() {
                         if (this.score >= 70) {
@@ -459,18 +475,18 @@
 
                         return characters;
                     },
-                    generate() {
-                        this.errorMessage = '';
-                        this.clampLen();
+                    generatePassword() {
+                        this.resetError();
+                        this.clampLength();
 
-                        if (!this.enforceAtLeastOneType()) {
+                        if (!this.ensureTypeSelection()) {
                             return;
                         }
 
-                        this.autocorrectMins();
+                        this.normalizeMinimums();
 
                         if (!this.hasCrypto()) {
-                            this.errorMessage = 'Sichere Zufallszahlen sind in diesem Browser nicht verfuegbar.';
+                            this.errorMessage = this.messages.cryptoUnavailable;
                             return;
                         }
 
@@ -507,7 +523,7 @@
                         const remaining = this.length - result.length;
 
                         if (remaining < 0) {
-                            this.errorMessage = 'Summe der Mindestwerte darf die Laenge nicht ueberschreiten.';
+                            this.errorMessage = this.messages.minValuesTooLarge;
                             return;
                         }
 
@@ -516,7 +532,7 @@
                         const fillPool = letterPoolValue.length ? letterPoolValue : fallbackPoolValue;
 
                         if (!fillPool.length) {
-                            this.errorMessage = 'Mindestens ein Zeichentyp muss aktiv sein.';
+                            this.errorMessage = this.messages.minTypesRequired;
                             return;
                         }
 
@@ -528,18 +544,18 @@
                         this.copied = false;
 
                         this.$nextTick(() => {
-                            this.resizeTextarea();
+                            this.resizePasswordField();
                         });
                     },
                     async copyPassword() {
-                        this.errorMessage = '';
+                        this.resetError();
 
                         if (!this.password) {
                             return;
                         }
 
                         if (!navigator.clipboard || !navigator.clipboard.writeText) {
-                            this.errorMessage = 'Zugriff auf die Zwischenablage ist nicht verfuegbar.';
+                            this.errorMessage = this.messages.clipboardUnavailable;
                             return;
                         }
 
@@ -555,22 +571,22 @@
                                 this.copied = false;
                             }, 2000);
                         } catch (error) {
-                            this.errorMessage = 'Kopieren fehlgeschlagen. Bitte manuell kopieren.';
+                            this.errorMessage = this.messages.clipboardFailed;
                         }
                     }
                 }"
             >
                 <header class="flex flex-col gap-2">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-red-400">Secure Passwords</p>
-                    <h1 class="text-2xl font-semibold text-white">Password Generator</h1>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-red-400">Sichere Passwörter</p>
+                    <h1 class="text-2xl font-semibold text-white">Passwortgenerator</h1>
                     <p class="text-sm text-slate-300">
-                        Create strong, custom passwords locally in your browser.
+                        Erstellen Sie sichere Passwörter direkt im Browser.
                     </p>
                 </header>
 
                 <div class="mt-6 flex flex-col gap-6">
                     <div class="flex flex-col gap-3">
-                        <label for="length" class="text-sm font-medium text-slate-200">Length</label>
+                        <label for="length" class="text-sm font-medium text-slate-200">Passwortlänge</label>
                         <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_5.5rem]">
                             <input
                                 id="length"
@@ -580,7 +596,7 @@
                                 step="1"
                                 class="w-full accent-red-500"
                                 x-model.number="length"
-                                @input="handleLengthInput()"
+                                @input="handleLengthChange()"
                             />
                             <input
                                 type="number"
@@ -589,59 +605,59 @@
                                 step="1"
                                 class="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm font-semibold text-white focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30"
                                 x-model.number="length"
-                                @input="handleLengthInput()"
-                                @blur="handleLengthInput()"
+                                @input="handleLengthChange()"
+                                @blur="handleLengthChange()"
                             />
                         </div>
                     </div>
 
                     <fieldset class="flex flex-col gap-3">
-                        <legend class="text-sm font-medium text-slate-200">Include characters</legend>
+                        <legend class="text-sm font-medium text-slate-200">Zeichentypen</legend>
                         <div class="grid gap-3 sm:grid-cols-2">
                             <label class="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-200">
                                 <input
                                     type="checkbox"
                                     class="h-4 w-4 accent-red-500"
                                     x-model="includeLowercase"
-                                    @change="handleTypeToggle('includeLowercase')"
+                                    @change="handleTypeChange('includeLowercase')"
                                 />
-                                Lowercase (a-z)
+                                Kleinbuchstaben (a-z)
                             </label>
                             <label class="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-200">
                                 <input
                                     type="checkbox"
                                     class="h-4 w-4 accent-red-500"
                                     x-model="includeUppercase"
-                                    @change="handleTypeToggle('includeUppercase')"
+                                    @change="handleTypeChange('includeUppercase')"
                                 />
-                                Uppercase (A-Z)
+                                Großbuchstaben (A-Z)
                             </label>
                             <label class="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-200">
                                 <input
                                     type="checkbox"
                                     class="h-4 w-4 accent-red-500"
                                     x-model="includeDigits"
-                                    @change="handleTypeToggle('includeDigits')"
+                                    @change="handleTypeChange('includeDigits')"
                                 />
-                                Digits (0-9)
+                                Zahlen (0-9)
                             </label>
                             <label class="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-200">
                                 <input
                                     type="checkbox"
                                     class="h-4 w-4 accent-red-500"
                                     x-model="includeSymbols"
-                                    @change="handleTypeToggle('includeSymbols')"
+                                    @change="handleTypeChange('includeSymbols')"
                                 />
-                                Symbols (!@#)
+                                Sonderzeichen (!@#)
                             </label>
                         </div>
                     </fieldset>
 
                     <div class="flex flex-col gap-3">
-                        <p class="text-sm font-medium text-slate-200">Minimum counts</p>
+                        <p class="text-sm font-medium text-slate-200">Mindestanzahlen</p>
                         <div class="grid gap-3 sm:grid-cols-2">
                             <label class="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-200">
-                                Min digits
+                                Mindestanzahl Zahlen
                                 <input
                                     type="number"
                                     min="0"
@@ -650,12 +666,12 @@
                                     class="w-20 rounded-lg border border-slate-800 bg-slate-900 px-2 py-1 text-sm font-semibold text-white focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
                                     x-model.number="minDigits"
                                     :disabled="!includeDigits"
-                                    @input="handleMinDigitsInput()"
-                                    @blur="handleMinDigitsInput()"
+                                    @input="handleMinDigitsChange()"
+                                    @blur="handleMinDigitsChange()"
                                 />
                             </label>
                             <label class="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-200">
-                                Min symbols
+                                Mindestanzahl Sonderzeichen
                                 <input
                                     type="number"
                                     min="0"
@@ -664,8 +680,8 @@
                                     class="w-20 rounded-lg border border-slate-800 bg-slate-900 px-2 py-1 text-sm font-semibold text-white focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
                                     x-model.number="minSymbols"
                                     :disabled="!includeSymbols"
-                                    @input="handleMinSymbolsInput()"
-                                    @blur="handleMinSymbolsInput()"
+                                    @input="handleMinSymbolsChange()"
+                                    @blur="handleMinSymbolsChange()"
                                 />
                             </label>
                         </div>
@@ -675,9 +691,9 @@
                         <button
                             type="button"
                             class="inline-flex w-full items-center justify-center rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-red-900/40 transition hover:bg-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/40 focus:ring-offset-2 focus:ring-offset-slate-950"
-                            @click="generate()"
+                            @click="generatePassword()"
                         >
-                            Generate
+                            Passwort erzeugen
                         </button>
                         <p
                             class="text-sm text-red-400"
@@ -689,17 +705,17 @@
                     </div>
 
                     <div class="flex flex-col gap-3">
-                        <label for="password" class="text-sm font-medium text-slate-200">Generated password</label>
+                        <label for="password" class="text-sm font-medium text-slate-200">Passwort</label>
                         <div class="flex flex-col gap-3 sm:flex-row sm:items-start">
                             <textarea
                                 id="password"
                                 rows="1"
                                 class="min-h-[2.75rem] w-full flex-1 resize-none overflow-hidden rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm font-medium text-white placeholder:text-slate-500 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30"
-                                placeholder="Your password will appear here"
+                                placeholder="Ihr Passwort erscheint hier"
                                 x-model="password"
                                 x-ref="passwordField"
                                 :maxlength="length"
-                                @input="handlePasswordInput()"
+                                @input="handlePasswordChange()"
                             ></textarea>
                             <button
                                 type="button"
@@ -707,17 +723,17 @@
                                 :disabled="password.length === 0"
                                 @click="copyPassword()"
                             >
-                                Copy
+                                Kopieren
                             </button>
                         </div>
                         <p class="text-xs font-semibold text-red-300" x-show="copied" x-transition>
-                            Copied!
+                            Kopiert!
                         </p>
                     </div>
 
                     <div class="flex flex-col gap-3">
                         <div class="flex items-center justify-between">
-                            <span class="text-sm font-medium text-slate-200">Strength</span>
+                            <span class="text-sm font-medium text-slate-200">Passwortstärke</span>
                             <span class="text-sm font-semibold" :class="strengthTextClass" x-text="`${strengthLabel} (${score})`"></span>
                         </div>
                         <div class="h-2 w-full overflow-hidden rounded-full bg-slate-800">
