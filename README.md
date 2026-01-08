@@ -50,7 +50,8 @@ Aufrufen:
 - Generator‑Algorithmen
 
 ### Konkrete Beispiele (Prompt → Ergebnis → Korrektur)
-1) Prompt: „Nutze zufällige Zeichen für den Generator.“ → Ergebnis: Vorschlag mit `Math.random()` → Korrektur: Umstellung auf `window.crypto.getRandomValues()` für kryptografisch sichere Zufallszahlen.
+1) Prompt: „Nutze zufällige Zeichen für den Generator, aber ohne `Math.random`.“ → Ergebnis: Vorschlag mit `Math.random()` → Korrektur: Umstellung auf `window.crypto.getRandomValues()` für kryptografisch sichere Zufallszahlen.
+2) Prompt: „Begrenze die Sonderzeichen auf: ! @ # $ % ^ & * ( ) - _ = + [ ] { } ; : , . ? /“ → Ergebnis: zusätzliche Zeichen wie `|`, `<`, `>` wurden übernommen → Korrektur: Symbolmenge exakt auf die erlaubte Liste reduziert.
 
 ### Wo hat die KI halluziniert oder schlechten Code geliefert?
 - Verwendung veralteter Tailwind‑Utilities (v3‑Syntax), die in Tailwind v4 nicht existieren.
