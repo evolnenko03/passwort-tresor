@@ -17,32 +17,93 @@
                 class="w-full max-w-lg rounded-2xl border border-slate-200/70 bg-white/90 p-6 shadow-xl backdrop-blur"
                 x-data="{
                     minLength: 8,
-                    maxLength: 64,
+                    maxLength: 128,
                     length: 16,
                     includeLowercase: true,
                     includeUppercase: true,
                     includeDigits: true,
                     includeSymbols: false,
+                    minLower: 0,
+                    minUpper: 0,
+                    minDigits: 0,
+                    minSymbols: 0,
                     password: '',
                     errorMessage: '',
                     copied: false,
                     copyTimeout: null,
+                    clampNumber(value, min, max) {
+                        const numericValue = Number.parseInt(value, 10);
+
+                        if (!Number.isFinite(numericValue)) {
+                            return min;
+                        }
+
+                        if (numericValue < min) {
+                            return min;
+                        }
+
+                        if (numericValue > max) {
+                            return max;
+                        }
+
+                        return numericValue;
+                    },
                     clampLength() {
-                        if (!Number.isFinite(this.length)) {
-                            this.length = this.minLength;
+                        this.length = this.clampNumber(this.length, this.minLength, this.maxLength);
+                    },
+                    normalizeMins() {
+                        this.minLower = this.includeLowercase ? this.clampNumber(this.minLower, 0, this.maxLength) : 0;
+                        this.minUpper = this.includeUppercase ? this.clampNumber(this.minUpper, 0, this.maxLength) : 0;
+                        this.minDigits = this.includeDigits ? this.clampNumber(this.minDigits, 0, this.maxLength) : 0;
+                        this.minSymbols = this.includeSymbols ? this.clampNumber(this.minSymbols, 0, this.maxLength) : 0;
+
+                        let total = this.minLower + this.minUpper + this.minDigits + this.minSymbols;
+
+                        if (total <= this.length) {
                             return;
                         }
 
-                        if (this.length < this.minLength) {
-                            this.length = this.minLength;
+                        this.errorMessage = 'Sum of minimum values cannot exceed the length.';
+                        let overflow = total - this.length;
+                        const order = ['minLower', 'minUpper', 'minDigits', 'minSymbols'];
+
+                        order.forEach((key) => {
+                            if (overflow <= 0) {
+                                return;
+                            }
+
+                            const reduction = Math.min(this[key], overflow);
+                            this[key] -= reduction;
+                            overflow -= reduction;
+                        });
+                    },
+                    handleLengthInput() {
+                        this.errorMessage = '';
+                        this.clampLength();
+                        this.normalizeMins();
+                    },
+                    handleMinInput(key) {
+                        this.errorMessage = '';
+                        this[key] = this.clampNumber(this[key], 0, this.maxLength);
+                        this.normalizeMins();
+                    },
+                    handleTypeToggle(typeKey, minKey) {
+                        this.errorMessage = '';
+
+                        if (!this[typeKey]) {
+                            if (!this.includeLowercase && !this.includeUppercase && !this.includeDigits && !this.includeSymbols) {
+                                this[typeKey] = true;
+                                this.errorMessage = 'At least one character type must remain enabled.';
+                                return;
+                            }
+
+                            this[minKey] = 0;
                         }
 
-                        if (this.length > this.maxLength) {
-                            this.length = this.maxLength;
-                        }
+                        this.normalizeMins();
                     },
-                    get hasAnyType() {
-                        return this.includeLowercase || this.includeUppercase || this.includeDigits || this.includeSymbols;
+                    handlePasswordInput() {
+                        this.copied = false;
                     },
                     get score() {
                         return this.calculateScore();
@@ -81,41 +142,43 @@
                         return 'text-rose-600';
                     },
                     calculateScore() {
+                        const passwordValue = this.password ?? '';
+                        const lengthValue = passwordValue.length;
                         let score = 0;
 
-                        if (this.length >= 12) {
+                        if (lengthValue >= 12) {
                             score += 15;
                         }
 
-                        if (this.length >= 16) {
+                        if (lengthValue >= 16) {
                             score += 20;
                         }
 
-                        if (this.length >= 20) {
+                        if (lengthValue >= 20) {
                             score += 20;
                         }
 
                         let variety = 0;
 
-                        if (this.includeLowercase) {
+                        if (/[a-z]/.test(passwordValue)) {
                             variety += 1;
                         }
 
-                        if (this.includeUppercase) {
+                        if (/[A-Z]/.test(passwordValue)) {
                             variety += 1;
                         }
 
-                        if (this.includeDigits) {
+                        if (/[0-9]/.test(passwordValue)) {
                             variety += 1;
                         }
 
-                        if (this.includeSymbols) {
+                        if (/[^A-Za-z0-9]/.test(passwordValue)) {
                             variety += 1;
                         }
 
                         score += variety * 10;
 
-                        if (this.includeDigits && this.includeSymbols) {
+                        if (/[0-9]/.test(passwordValue) && /[^A-Za-z0-9]/.test(passwordValue)) {
                             score += 10;
                         }
 
@@ -167,9 +230,10 @@
                     generate() {
                         this.errorMessage = '';
                         this.clampLength();
+                        this.normalizeMins();
 
-                        if (!this.hasAnyType) {
-                            this.errorMessage = 'Please select at least one character type.';
+                        if (!this.includeLowercase && !this.includeUppercase && !this.includeDigits && !this.includeSymbols) {
+                            this.errorMessage = 'At least one character type must remain enabled.';
                             return;
                         }
 
@@ -180,32 +244,43 @@
 
                         const sets = this.getCharacterSets();
                         const activeSets = [];
+                        const requiredSets = [];
 
                         if (this.includeLowercase) {
                             activeSets.push(sets.lowercase);
+                            requiredSets.push({ set: sets.lowercase, count: this.minLower });
                         }
 
                         if (this.includeUppercase) {
                             activeSets.push(sets.uppercase);
+                            requiredSets.push({ set: sets.uppercase, count: this.minUpper });
                         }
 
                         if (this.includeDigits) {
                             activeSets.push(sets.digits);
+                            requiredSets.push({ set: sets.digits, count: this.minDigits });
                         }
 
                         if (this.includeSymbols) {
                             activeSets.push(sets.symbols);
+                            requiredSets.push({ set: sets.symbols, count: this.minSymbols });
                         }
 
-                        let pool = '';
+                        const pool = activeSets.join('');
                         const result = [];
 
-                        activeSets.forEach((set) => {
-                            pool += set;
-                            result.push(this.randomChar(set));
+                        requiredSets.forEach((item) => {
+                            for (let i = 0; i < item.count; i += 1) {
+                                result.push(this.randomChar(item.set));
+                            }
                         });
 
                         const remaining = this.length - result.length;
+
+                        if (remaining < 0) {
+                            this.errorMessage = 'Sum of minimum values cannot exceed the length.';
+                            return;
+                        }
 
                         for (let i = 0; i < remaining; i += 1) {
                             result.push(this.randomChar(pool));
@@ -262,43 +337,128 @@
                                 id="length"
                                 type="range"
                                 min="8"
-                                max="64"
+                                max="128"
                                 step="1"
                                 class="w-full accent-slate-900"
                                 x-model.number="length"
+                                @input="handleLengthInput()"
                             />
                             <input
                                 type="number"
                                 min="8"
-                                max="64"
+                                max="128"
                                 step="1"
                                 class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
                                 x-model.number="length"
-                                @change="clampLength()"
-                                @blur="clampLength()"
+                                @input="handleLengthInput()"
+                                @blur="handleLengthInput()"
                             />
                         </div>
                     </div>
 
                     <fieldset class="flex flex-col gap-3">
                         <legend class="text-sm font-medium text-slate-700">Include characters</legend>
-                        <div class="grid gap-3 sm:grid-cols-2">
-                            <label class="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-700">
-                                <input type="checkbox" class="h-4 w-4 accent-slate-900" x-model="includeLowercase" />
-                                Lowercase (a-z)
-                            </label>
-                            <label class="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-700">
-                                <input type="checkbox" class="h-4 w-4 accent-slate-900" x-model="includeUppercase" />
-                                Uppercase (A-Z)
-                            </label>
-                            <label class="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-700">
-                                <input type="checkbox" class="h-4 w-4 accent-slate-900" x-model="includeDigits" />
-                                Digits (0-9)
-                            </label>
-                            <label class="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-700">
-                                <input type="checkbox" class="h-4 w-4 accent-slate-900" x-model="includeSymbols" />
-                                Symbols (!@#)
-                            </label>
+                        <div class="flex flex-col gap-3">
+                            <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
+                                <label class="flex items-center gap-2 text-sm text-slate-700">
+                                    <input
+                                        type="checkbox"
+                                        class="h-4 w-4 accent-slate-900"
+                                        x-model="includeLowercase"
+                                        @change="handleTypeToggle('includeLowercase', 'minLower')"
+                                    />
+                                    Lowercase (a-z)
+                                </label>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-semibold uppercase text-slate-500">Min</span>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="128"
+                                        step="1"
+                                        class="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm font-semibold text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
+                                        x-model.number="minLower"
+                                        :disabled="!includeLowercase"
+                                        @input="handleMinInput('minLower')"
+                                        @blur="handleMinInput('minLower')"
+                                    />
+                                </div>
+                            </div>
+                            <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
+                                <label class="flex items-center gap-2 text-sm text-slate-700">
+                                    <input
+                                        type="checkbox"
+                                        class="h-4 w-4 accent-slate-900"
+                                        x-model="includeUppercase"
+                                        @change="handleTypeToggle('includeUppercase', 'minUpper')"
+                                    />
+                                    Uppercase (A-Z)
+                                </label>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-semibold uppercase text-slate-500">Min</span>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="128"
+                                        step="1"
+                                        class="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm font-semibold text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
+                                        x-model.number="minUpper"
+                                        :disabled="!includeUppercase"
+                                        @input="handleMinInput('minUpper')"
+                                        @blur="handleMinInput('minUpper')"
+                                    />
+                                </div>
+                            </div>
+                            <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
+                                <label class="flex items-center gap-2 text-sm text-slate-700">
+                                    <input
+                                        type="checkbox"
+                                        class="h-4 w-4 accent-slate-900"
+                                        x-model="includeDigits"
+                                        @change="handleTypeToggle('includeDigits', 'minDigits')"
+                                    />
+                                    Digits (0-9)
+                                </label>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-semibold uppercase text-slate-500">Min</span>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="128"
+                                        step="1"
+                                        class="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm font-semibold text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
+                                        x-model.number="minDigits"
+                                        :disabled="!includeDigits"
+                                        @input="handleMinInput('minDigits')"
+                                        @blur="handleMinInput('minDigits')"
+                                    />
+                                </div>
+                            </div>
+                            <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
+                                <label class="flex items-center gap-2 text-sm text-slate-700">
+                                    <input
+                                        type="checkbox"
+                                        class="h-4 w-4 accent-slate-900"
+                                        x-model="includeSymbols"
+                                        @change="handleTypeToggle('includeSymbols', 'minSymbols')"
+                                    />
+                                    Symbols (!@#)
+                                </label>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-semibold uppercase text-slate-500">Min</span>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="128"
+                                        step="1"
+                                        class="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm font-semibold text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
+                                        x-model.number="minSymbols"
+                                        :disabled="!includeSymbols"
+                                        @input="handleMinInput('minSymbols')"
+                                        @blur="handleMinInput('minSymbols')"
+                                    />
+                                </div>
+                            </div>
                         </div>
                     </fieldset>
 
@@ -325,10 +485,10 @@
                             <input
                                 id="password"
                                 type="text"
-                                readonly
                                 class="w-full flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
                                 placeholder="Your password will appear here"
                                 x-model="password"
+                                @input="handlePasswordInput()"
                             />
                             <button
                                 type="button"
