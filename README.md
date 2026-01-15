@@ -11,6 +11,11 @@ Diese Anwendung stellt einen clientseitigen Passwort‑Generator bereit. Nutzer 
 - Node.js und npm
 
 ### Schritte
+
+```bash
+git clone https://github.com/evolnenko03/passwort-tresor.git
+```
+
 ```bash
 composer install
 npm install
@@ -20,6 +25,7 @@ Falls keine `.env` vorhanden ist:
 ```bash
 cp .env.example .env
 php artisan key:generate
+
 ```
 
 Frontend starten:
@@ -34,6 +40,20 @@ php artisan serve
 
 Aufrufen:
 - `localhost:8000/passwords`
+
+Falls es nicht klappen sollte, in der env. diesen part so ändern:
+
+SESSION_DRIVER=file
+SESSION_LIFETIME=120
+SESSION_ENCRYPT=false
+SESSION_PATH=/
+SESSION_DOMAIN=null
+
+BROADCAST_CONNECTION=log
+FILESYSTEM_DISK=local
+QUEUE_CONNECTION=sync
+
+CACHE_STORE=file
 
 ## Features
 - Passwortlänge 8–128
